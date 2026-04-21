@@ -1,0 +1,4 @@
+a,b,c,missing_count,missing_ratio,numeric_mean,numeric_std,numeric_sum,numeric_range,numeric_nonzero_count,numeric_positive_count,a_zscore,b_zscore,c_zscore
+1,2,3,0,0.0,1.2,1.3038404810405297,6.0,3.0,3,3,-1.0,-1.0,-1.0
+4,5,6,0,0.0,3.0,2.8284271247461903,15.0,6.0,3,3,0.0,0.0,0.0
+7,8,9,0,0.0,4.8,4.43846820423443,24.0,9.0,3,3,1.0,1.0,1.0

@@ -32,7 +32,8 @@ export default function DashboardView({ result, error }) {
     feature_visualizations,
     feature_relationships,
     feature_engineering_summary,
-    correlation_charts
+    correlation_charts,
+    seaborn_charts
   } = result;
 
   const hasFeatureData = feature_catalog && feature_visualizations;
@@ -64,6 +65,31 @@ export default function DashboardView({ result, error }) {
           </div>
         )}
       </section>
+
+      {/* Advanced Analytical Visuals (Seaborn) */}
+      {seaborn_charts && seaborn_charts.length > 0 && (
+        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+          <div className="flex items-center space-x-2 mb-6">
+            <div className="w-2 h-8 bg-blue-600 rounded-full"></div>
+            <h2 className="text-2xl font-bold text-gray-800">Advanced Analytical Visuals</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {seaborn_charts.map((chart, index) => (
+              <div key={index} className="bg-gray-50 rounded-xl p-4 border border-gray-100 hover:shadow-md transition-shadow">
+                <h3 className="text-lg font-semibold text-gray-700 mb-4 px-2">{chart.title}</h3>
+                <div className="bg-white rounded-lg overflow-hidden border border-gray-200">
+                  <img 
+                    src={`/api/processed/${chart.filepath || chart.filename}`} 
+                    alt={chart.title}
+                    className="w-full h-auto object-contain"
+                    loading="lazy"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Feature Engineering Summary */}
       {feature_engineering_summary && (

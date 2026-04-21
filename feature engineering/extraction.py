@@ -13,6 +13,8 @@ except ImportError:
     HAS_COINTEGRATION = False
 
 try:
+    import matplotlib
+    matplotlib.use('Agg')  # Force non-interactive backend for server environments
     import matplotlib.pyplot as plt
     import seaborn as sns
     HAS_PLOTTING = True
@@ -35,12 +37,12 @@ def load_excel_file(path, sheet_name=0):
 
 
 def summarize_dataframe(df):
-    """Return a compact summary of the dataset."""
+    """Return a compact summary of the dataset with standard Python types."""
     return {
-        'shape': df.shape,
+        'shape': list(map(int, df.shape)),
         'dtypes': df.dtypes.astype(str).to_dict(),
-        'missing_count': df.isna().sum().to_dict(),
-        'missing_ratio': (df.isna().mean() * 100).round(2).to_dict(),
+        'missing_count': {str(k): int(v) for k, v in df.isna().sum().to_dict().items()},
+        'missing_ratio': {str(k): float(v) for k, v in (df.isna().mean() * 100).round(2).to_dict().items()},
     }
 
 
@@ -82,13 +84,26 @@ def normalize_columns(df):
 
 
 def clean_dataset(df):
-    """Clean string values, normalize missing tokens, and drop duplicate rows."""
+    """Clean string values, normalize missing tokens, drop duplicate rows, and filter useless columns."""
     df = df.copy()
     df = df.drop_duplicates()
+    
+    # Clean string objects
     for col in df.select_dtypes(include=['object']).columns:
-        df[col] = df[col].replace({None: np.nan, 'None': np.nan, 'none': np.nan, 'nan': np.nan})
-        df[col] = df[col].astype(str).str.strip()
-        df[col] = df[col].replace({'': np.nan})
+        df[col] = df[col].replace({None: np.nan, 'None': np.nan, 'none': np.nan, 'nan': np.nan, '': np.nan})
+        # Note: strip() converts NaN to 'nan' if we don't do it before replacing.
+        mask = df[col].notna()
+        df.loc[mask, col] = df.loc[mask, col].astype(str).str.strip()
+        df[col] = df[col].replace({'': np.nan, 'nan': np.nan})
+
+    # Drop columns with 100% missing values
+    df = df.dropna(axis=1, how='all')
+
+    # Drop columns with only 1 unique value
+    cols_to_drop = [c for c in df.columns if df[c].nunique(dropna=True) <= 1]
+    if cols_to_drop:
+        df = df.drop(columns=cols_to_drop)
+
     return df
 
 
@@ -231,18 +246,20 @@ def compute_cointegration_matrix(numeric_df, significance_level=0.05, max_column
 # --------------------------------------------------
 
 def describe_numeric_columns(numeric_df):
-    """Create a numeric feature summary with basic statistics."""
+    """Create a numeric feature summary with basic statistics using standard Python types."""
     if numeric_df.shape[1] == 0:
         return {}
-    return numeric_df.describe().round(4).to_dict()
+    res = numeric_df.describe().round(4).to_dict()
+    # Deep convert to standard types
+    return {str(col): {str(k): float(v) if pd.notna(v) else None for k, v in stats.items()} for col, stats in res.items()}
 
 
 def summarize_categorical_columns(categorical_df, top_n=5):
-    """Summarize categorical fields using top frequency values."""
+    """Summarize categorical fields using standard Python types."""
     summary = {}
     for col in categorical_df.columns:
         counts = categorical_df[col].value_counts(dropna=False).head(top_n)
-        summary[col] = counts.to_dict()
+        summary[col] = {str(k): int(v) for k, v in counts.to_dict().items()}
     return summary
 
 
@@ -314,13 +331,13 @@ def generate_feature_catalog(numeric_df, categorical_df, datetime_df, df):
             'name': col,
             'type': 'categorical',
             'dtype': str(categorical_df[col].dtype),
-            'missing_percent': (categorical_df[col].isna().mean() * 100).round(2),
-            'unique_values': categorical_df[col].nunique(),
+            'missing_percent': float((categorical_df[col].isna().mean() * 100).round(2)),
+            'unique_values': int(categorical_df[col].nunique()),
             'top_category': str(value_counts.index[0]),
-            'top_category_percent': (value_counts.iloc[0] / len(categorical_df) * 100).round(2),
-            'categories': value_counts.head(10).to_dict(),
-            'cardinality': len(value_counts),
-            'sample_size': len(categorical_df)
+            'top_category_percent': float((value_counts.iloc[0] / len(categorical_df) * 100).round(2)),
+            'categories': {str(k): int(v) for k, v in value_counts.head(10).to_dict().items()},
+            'cardinality': int(len(value_counts)),
+            'sample_size': int(len(categorical_df))
         })
 
     # Datetime features
@@ -331,11 +348,11 @@ def generate_feature_catalog(numeric_df, categorical_df, datetime_df, df):
                 'name': col,
                 'type': 'datetime',
                 'dtype': str(datetime_df[col].dtype),
-                'missing_percent': (datetime_df[col].isna().mean() * 100).round(2),
-                'unique_values': datetime_df[col].nunique(),
+                'missing_percent': float((datetime_df[col].isna().mean() * 100).round(2)),
+                'unique_values': int(datetime_df[col].nunique()),
                 'date_range': f"{dt_data.min().date()} to {dt_data.max().date()}",
-                'year_range': f"{dt_data.dt.year.min()} to {dt_data.dt.year.max()}",
-                'sample_size': len(dt_data)
+                'year_range': f"{int(dt_data.dt.year.min())} to {int(dt_data.dt.year.max())}",
+                'sample_size': int(len(dt_data))
             })
 
     # Engineered features (look for patterns that indicate feature engineering)
@@ -447,6 +464,45 @@ def generate_feature_visualizations(numeric_df, categorical_df, feature_catalog)
     return visualizations
 
 
+def generate_meaningful_correlation_insights(corr_matrix, correlation_pairs, df, max_pairs=4, max_points=150):
+    """Generate intelligent insights and scatterplot data for top correlated pairs."""
+    charts = {'scatters': []}
+    if not correlation_pairs:
+        return charts
+        
+    for pair in correlation_pairs[:max_pairs]:
+        left = pair['left']
+        right = pair['right']
+        corr = pair['correlation']
+        
+        if left not in df.columns or right not in df.columns:
+            continue
+            
+        # Extract data without NaNs, limit to max_points for performance
+        sub_df = df[[left, right]].dropna().head(max_points)
+        if sub_df.empty:
+            continue
+            
+        data = [{'x': float(row[left]), 'y': float(row[right])} for _, row in sub_df.iterrows()]
+        
+        strength = "Strong" if abs(corr) > 0.7 else ("Moderate" if abs(corr) > 0.4 else "Weak")
+        direction = "positive" if corr > 0 else "negative"
+        
+        interpretation = f"{strength} {direction} relationship. As {left} increases, {right} tends to {'increase' if corr > 0 else 'decrease'}."
+        caution = "Correlation does not imply causation. Consider confounding variables."
+        
+        charts['scatters'].append({
+            'x_label': left,
+            'y_label': right,
+            'data': data,
+            'correlation': corr,
+            'interpretation': interpretation,
+            'caution': caution
+        })
+        
+    return charts
+
+
 def generate_feature_relationships(corr_matrix, correlation_pairs, cointegration_matrix):
     """Generate feature relationship visualizations."""
     relationships = {}
@@ -499,15 +555,15 @@ def generate_feature_relationships(corr_matrix, correlation_pairs, cointegration
 
 
 def generate_feature_engineering_summary(df, original_shape, feature_catalog):
-    """Generate a summary of the feature engineering process."""
+    """Generate a summary of the feature engineering process with clean types."""
     summary = {
         'original_dataset': {
-            'rows': original_shape['shape'][0],
-            'columns': original_shape['shape'][1]
+            'rows': int(original_shape['shape'][0]),
+            'columns': int(original_shape['shape'][1])
         },
         'processed_dataset': {
-            'rows': df.shape[0],
-            'columns': df.shape[1]
+            'rows': int(df.shape[0]),
+            'columns': int(df.shape[1])
         },
         'feature_engineering_steps': [],
         'transformations_applied': []
@@ -583,6 +639,125 @@ def get_top_correlation_pairs(corr_matrix, threshold=0.7, max_pairs=10):
                 pairs.append({'left': left, 'right': right, 'correlation': round(float(value), 4)})
     pairs.sort(key=lambda x: abs(x['correlation']), reverse=True)
     return pairs[:max_pairs]
+
+
+def generate_advanced_seaborn_charts(df, numeric_df, categorical_df, datetime_df, output_dir):
+    """
+    Implementation of the 8-step Seaborn Feature Engineering Pipeline.
+    Generates and saves static PNG charts for various analytical steps.
+    """
+    if not HAS_PLOTTING:
+        return []
+
+    import uuid
+    charts = []
+    output_path = Path(output_dir)
+    output_path.mkdir(exist_ok=True, parents=True)
+
+    # Step 8: Styling
+    sns.set_theme(style="whitegrid")
+    
+    # helper to save plot and track
+    def save_plot(title, filename_prefix):
+        plt.tight_layout()
+        plt.title(title, pad=20)
+        filename = f"{filename_prefix}_{uuid.uuid4().hex[:8]}.png"
+        full_path = output_path / filename
+        plt.savefig(full_path, bbox_inches='tight', dpi=100)
+        plt.close()
+        charts.append({"title": title, "filename": filename})
+
+    # Step 2: Correlation Plots
+    if not numeric_df.empty:
+        # Correlation Matrix Calculation
+        corr = numeric_df.corr()
+        if not corr.empty:
+            plt.figure(figsize=(10, 8))
+            sns.heatmap(corr, annot=True, cmap='coolwarm', fmt=".2f", linewidths=0.5)
+            save_plot("Numerical Correlation Heatmap", "corr_heatmap")
+
+            # Selection (0.3 < |corr| < 0.85)
+            cols = corr.columns.tolist()
+            pairs_count = 0
+            for i, c1 in enumerate(cols):
+                for c2 in cols[i+1:]:
+                    val = corr.loc[c1, c2]
+                    if 0.3 < abs(val) < 0.85:
+                        plt.figure(figsize=(8, 6))
+                        sns.scatterplot(data=df, x=c1, y=c2, alpha=0.6)
+                        sns.regplot(data=df, x=c1, y=c2, scatter=False, color='red')
+                        save_plot(f"Correlation: {c1} vs {c2} (r={val:.2f})", "scatter_reg")
+                        pairs_count += 1
+                        if pairs_count >= 3: break # Limit clutter
+                if pairs_count >= 3: break
+
+    # Step 3: Numerical Distributions
+    num_cols = numeric_df.columns.tolist()[:5] # Limit clutter
+    for col in num_cols:
+        plt.figure(figsize=(10, 4))
+        plt.subplot(1, 2, 1)
+        sns.histplot(df[col], kde=True, color='skyblue')
+        plt.title(f"Histogram: {col}")
+        
+        plt.subplot(1, 2, 2)
+        sns.boxplot(x=df[col], color='lightcoral')
+        plt.title(f"Boxplot: {col}")
+        save_plot(f"Distribution of {col}", f"dist_{col}")
+
+    # Step 4: Categorical Analysis
+    cat_cols = categorical_df.columns.tolist()[:3] # Limit clutter
+    for col in cat_cols:
+        counts = df[col].value_counts()
+        if counts.empty: continue
+        unique_count = len(counts)
+        plt.figure(figsize=(8, 6))
+        if unique_count <= 6:
+            plt.pie(counts, labels=counts.index, autopct='%1.1f%%', startangle=140, colors=sns.color_palette("pastel"))
+            save_plot(f"Category Pie Chart: {col}", f"pie_{col}")
+        else:
+            top_counts = counts.head(10)
+            sns.countplot(data=df, x=col, order=top_counts.index, palette="viridis")
+            plt.xticks(rotation=45)
+            save_plot(f"Category Bar Chart (Top 10): {col}", f"bar_{col}")
+
+    # Step 5: Categorical vs Numerical
+    if not numeric_df.empty and not categorical_df.empty:
+        # Cross join top pairs
+        c1 = categorical_df.columns[0]
+        n1 = numeric_df.columns[0]
+        plt.figure(figsize=(10, 6))
+        means = df.groupby(c1)[n1].mean().sort_values(ascending=False).head(10)
+        sns.barplot(x=means.index, y=means.values, palette="magma")
+        plt.title(f"Mean {n1} by {c1}")
+        plt.xticks(rotation=45)
+        save_plot(f"Categorical Mean: {n1} by {c1}", "cat_vs_num")
+
+    # Step 6: Time Series Analysis
+    if not datetime_df.empty and not numeric_df.empty:
+        t_col = datetime_df.columns[0]
+        n_col = numeric_df.columns[0]
+        temp_df = df[[t_col, n_col]].dropna().sort_values(by=t_col)
+        if not temp_df.empty:
+            plt.figure(figsize=(12, 6))
+            sns.lineplot(data=temp_df, x=t_col, y=n_col, marker='o', alpha=0.5)
+            if len(temp_df) > 7:
+                temp_df['rolling'] = temp_df[n_col].rolling(window=min(7, len(temp_df))).mean()
+                sns.lineplot(data=temp_df, x=t_col, y='rolling', color='red', label='7-Day Rolling Avg')
+            plt.xticks(rotation=45)
+            save_plot(f"Time Series: {n_col} over {t_col}", "timeseries")
+
+    # Step 7: Missing Data Visualization
+    missing_pct = (df.isna().mean() * 100).sort_values(ascending=False)
+    if missing_pct.any():
+        plt.figure(figsize=(12, 6))
+        top_missing = missing_pct.head(15)
+        sns.barplot(x=top_missing.index, y=top_missing.values, palette="Reds_r")
+        plt.ylabel("Missing Percentage (%)")
+        plt.title("Missing Data Per Column")
+        plt.xticks(rotation=45)
+        save_plot("Missing Data Overview", "missing_bar")
+
+    return charts
 
 
 def build_performance_notes(numeric_df, has_tokenize_statsmodels=False, plot_available=True):
@@ -718,10 +893,24 @@ def process_excel_dataset(
     df = extract_text_features(df)
 
     numeric_df, categorical_df, datetime_df = split_dataframe(df)
-    corr_matrix = compute_numeric_correlations(numeric_df, max_columns=40)
-    correlation_pairs = get_top_correlation_pairs(corr_matrix)
-    cointegration_matrix = compute_cointegration_matrix(numeric_df, max_columns=10)
-    numeric_summary = describe_numeric_columns(numeric_df)
+    
+    # Ensure some numeric data for charts if possible
+    if numeric_df.empty and not df.empty:
+        df = infer_column_types(df)
+        numeric_df, categorical_df, datetime_df = split_dataframe(df)
+
+    if numeric_df.empty:
+        numeric_summary = {}
+        corr_matrix = pd.DataFrame()
+        correlation_pairs = []
+        cointegration_matrix = pd.DataFrame()
+    else:
+        selected_numeric = select_numeric_columns_for_analysis(numeric_df)
+        numeric_summary = describe_numeric_columns(numeric_df)
+        corr_matrix = compute_numeric_correlations(selected_numeric)
+        correlation_pairs = get_top_correlation_pairs(corr_matrix)
+        cointegration_matrix = compute_cointegration_matrix(selected_numeric) if HAS_COINTEGRATION else None
+
     categorical_summary = summarize_categorical_columns(categorical_df)
     insights = build_insights(
         summarize_dataframe(df),
@@ -756,7 +945,18 @@ def process_excel_dataset(
     feature_catalog = generate_feature_catalog(numeric_df, categorical_df, datetime_df, df)
     feature_visualizations = generate_feature_visualizations(numeric_df, categorical_df, feature_catalog)
     feature_relationships = generate_feature_relationships(corr_matrix, correlation_pairs, cointegration_matrix)
-    feature_engineering_summary = generate_feature_engineering_summary(df, summarize_dataframe(df)['shape'], feature_catalog)
+    feature_engineering_summary = generate_feature_engineering_summary(df, summarize_dataframe(df), feature_catalog)
+    
+    # Generate Advanced Seaborn Charts (Step 2-8)
+    seaborn_charts = []
+    if output_dir and HAS_PLOTTING:
+        # Use a subfolder for these charts to avoid clutter in the processed dir
+        seaborn_charts_dir = Path(output_dir) / "seaborn_plots"
+        seaborn_charts = generate_advanced_seaborn_charts(df, numeric_df, categorical_df, datetime_df, str(seaborn_charts_dir))
+        # Update extra_files to include these
+        for chart in seaborn_charts:
+            # chart['filename'] already contains 'seaborn_plots/'
+            extra_files[chart['title']] = str(Path(output_dir) / chart['filename'])
 
     return {
         'processed_dataframe': final_df,
@@ -779,6 +979,7 @@ def process_excel_dataset(
         'feature_visualizations': feature_visualizations,
         'feature_relationships': feature_relationships,
         'feature_engineering_summary': feature_engineering_summary,
+        'seaborn_charts': seaborn_charts,
         'summary': summarize_dataframe(final_df),
     }
 
