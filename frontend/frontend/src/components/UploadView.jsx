@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import { FileSpreadsheet, UploadCloud } from 'lucide-react';
 
-export default function UploadView() {
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
+export default function UploadView({ onUploadComplete, onUploadError }) {
+  const [selectedFile, setSelectedFile] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [fileName, setFileName] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState('');
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -19,15 +23,58 @@ export default function UploadView() {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      setFileName(e.dataTransfer.files[0].name);
+      setSelectedFile(e.dataTransfer.files[0]);
     }
   };
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      setFileName(e.target.files[0].name);
+      setSelectedFile(e.target.files[0]);
     }
   };
+
+  const uploadFile = async () => {
+    if (!selectedFile) return;
+
+    setIsUploading(true);
+    setUploadMessage('Uploading and extracting features...');
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const text = await response.text();
+      
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch (parseError) {
+        throw new Error(`Server returned non-JSON response (${response.status}): ${text}`);
+      }
+
+      if (!response.ok) {
+        const errorMessage = result.error || result.detail || `Upload failed with status ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      setUploadMessage('Dataset uploaded successfully. Processing complete.');
+      onUploadComplete(result);
+    } catch (error) {
+      const message = error.message || 'Upload failed';
+      console.error('Upload error:', message);
+      setUploadMessage(message);
+      onUploadError(message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const fileName = selectedFile ? selectedFile.name : null;
 
   return (
     <div className="h-full flex items-center justify-center pb-12">
@@ -39,25 +86,25 @@ export default function UploadView() {
               Upload your raw Excel or CSV files to begin the feature engineering pipeline.
             </p>
           </div>
-          
-          <div 
+
+          <div
             className={`mt-4 relative border-2 border-dashed rounded-xl p-12 transition-all duration-200 group ${
-              isDragging 
-                ? 'border-blue-500 bg-blue-50' 
+              isDragging
+                ? 'border-blue-500 bg-blue-50'
                 : 'border-gray-200 hover:border-blue-400 hover:bg-slate-50'
             }`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
-            <input 
-              type="file" 
-              id="file-upload" 
+            <input
+              type="file"
+              id="file-upload"
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
               onChange={handleFileChange}
               accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
             />
-            
+
             <div className="flex flex-col items-center justify-center gap-4 pointer-events-none">
               <div className={`p-4 rounded-full transition-colors duration-200 ${
                 isDragging ? 'bg-blue-100 text-blue-600' : 'bg-gray-50 text-gray-400 group-hover:bg-blue-50 group-hover:text-blue-500'
@@ -79,16 +126,20 @@ export default function UploadView() {
             </div>
           </div>
 
-          <div className="mt-8 flex justify-end">
-            <button 
+          <div className="mt-8 flex flex-col gap-3 items-end">
+            {uploadMessage ? (
+              <p className="text-sm text-gray-500">{uploadMessage}</p>
+            ) : null}
+            <button
               className={`px-6 py-2.5 rounded-lg font-medium transition-all duration-200 ${
-                fileName 
-                  ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm hover:shadow' 
+                fileName && !isUploading
+                  ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm hover:shadow'
                   : 'bg-gray-100 text-gray-400 cursor-not-allowed'
               }`}
-              disabled={!fileName}
+              disabled={!fileName || isUploading}
+              onClick={uploadFile}
             >
-              Continue to Dataset
+              {isUploading ? 'Uploading...' : 'Continue to Dataset'}
             </button>
           </div>
         </div>

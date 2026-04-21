@@ -1,23 +1,41 @@
 import { useState } from 'react';
 import Sidebar from './components/Sidebar';
 import UploadView from './components/UploadView';
+import DatasetView from './components/DatasetView';
+import DashboardView from './components/DashboardView';
+import TransformView from './components/TransformView';
+import ExportView from './components/ExportView';
 import PlaceholderView from './components/PlaceholderView';
 
 function App() {
   const [activeTab, setActiveTab] = useState('Upload');
+  const [uploadResult, setUploadResult] = useState(null);
+  const [uploadError, setUploadError] = useState(null);
 
   const renderContent = () => {
     switch (activeTab) {
       case 'Upload':
-        return <UploadView />;
+        return (
+          <UploadView
+            onUploadComplete={(result) => {
+              setUploadResult(result);
+              setUploadError(null);
+              setActiveTab('Dataset');
+            }}
+            onUploadError={(errorMessage) => {
+              setUploadError(errorMessage);
+              setUploadResult(null);
+            }}
+          />
+        );
       case 'Dataset':
-        return <PlaceholderView title="Dataset Explorer" description="View and filter your uploaded datasets in a tabular format." />;
+        return <DatasetView result={uploadResult} error={uploadError} />;
       case 'Transform':
-        return <PlaceholderView title="Data Transformations" description="Apply feature engineering operations like scaling, encoding, and imputation." />;
+        return <TransformView result={uploadResult} error={uploadError} />;
       case 'Dashboard':
-        return <PlaceholderView title="Analysis Dashboard" description="Visualize dataset statistics, correlations, and feature importance." />;
+        return <DashboardView result={uploadResult} error={uploadError} />;
       case 'Export':
-        return <PlaceholderView title="Export Data" description="Download the processed dataset or pipeline configurations." />;
+        return <ExportView result={uploadResult} error={uploadError} />;
       default:
         return <UploadView />;
     }
@@ -28,7 +46,6 @@ function App() {
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
       
       <main className="flex-1 flex flex-col h-full overflow-y-auto">
-        {/* Simple header to provide context, mostly visual spacing */}
         <header className="px-8 py-6 border-b border-gray-100 bg-white/50 backdrop-blur-sm sticky top-0 z-10">
           <h1 className="text-2xl font-semibold text-gray-800 tracking-tight">{activeTab}</h1>
           <p className="text-sm text-gray-500 mt-1">Feature Engineering Data Portal</p>
