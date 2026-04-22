@@ -665,7 +665,7 @@ def generate_advanced_seaborn_charts(df, numeric_df, categorical_df, datetime_df
         full_path = output_path / filename
         plt.savefig(full_path, bbox_inches='tight', dpi=100)
         plt.close()
-        charts.append({"title": title, "filename": filename})
+        charts.append({"title": title, "filename": f"seaborn_plots/{filename}", "filepath": f"seaborn_plots/{filename}"})
 
     # Step 2: Correlation Plots
     if not numeric_df.empty:
@@ -950,12 +950,11 @@ def process_excel_dataset(
     # Generate Advanced Seaborn Charts (Step 2-8)
     seaborn_charts = []
     if output_dir and HAS_PLOTTING:
-        # Use a subfolder for these charts to avoid clutter in the processed dir
         seaborn_charts_dir = Path(output_dir) / "seaborn_plots"
         seaborn_charts = generate_advanced_seaborn_charts(df, numeric_df, categorical_df, datetime_df, str(seaborn_charts_dir))
         # Update extra_files to include these
         for chart in seaborn_charts:
-            # chart['filename'] already contains 'seaborn_plots/'
+            # chart['filename'] already contains 'seaborn_plots/' now
             extra_files[chart['title']] = str(Path(output_dir) / chart['filename'])
 
     return {
