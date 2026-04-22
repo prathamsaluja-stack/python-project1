@@ -14,16 +14,14 @@ except ImportError:
 
 try:
     import matplotlib
-    matplotlib.use('Agg')  # Force non-interactive backend for server environments
+    matplotlib.use('Agg')  
     import matplotlib.pyplot as plt
     import seaborn as sns
     HAS_PLOTTING = True
 except ImportError:
     HAS_PLOTTING = False
 
-# --------------------------------------------------
-# Block 1: file loading and dataset inspection
-# --------------------------------------------------
+# File loading and dataset inspection
 
 def load_excel_file(path, sheet_name=0):
     """Load a sheet from Excel or a CSV dataset."""
@@ -60,9 +58,7 @@ def find_high_missing_columns(df, threshold=0.6):
     """Return columns with more than threshold missing values."""
     return df.columns[df.isna().mean() > threshold].tolist()
 
-# --------------------------------------------------
-# Block 2: normalization, cleaning, and type inference
-# --------------------------------------------------
+# Normalization, cleaning, and type inference
 
 def normalize_columns(df):
     """Standardize column names for consistent processing."""
@@ -82,31 +78,24 @@ def normalize_columns(df):
     df.columns = new_columns
     return df
 
-
 def clean_dataset(df):
     """Clean string values, normalize missing tokens, drop duplicate rows, and filter useless columns."""
     df = df.copy()
     df = df.drop_duplicates()
-    
-    # Clean string objects
     for col in df.select_dtypes(include=['object']).columns:
         df[col] = df[col].replace({None: np.nan, 'None': np.nan, 'none': np.nan, 'nan': np.nan, '': np.nan})
-        # Note: strip() converts NaN to 'nan' if we don't do it before replacing.
         mask = df[col].notna()
         df.loc[mask, col] = df.loc[mask, col].astype(str).str.strip()
         df[col] = df[col].replace({'': np.nan, 'nan': np.nan})
 
     # Drop columns with 100% missing values
     df = df.dropna(axis=1, how='all')
-
     # Drop columns with only 1 unique value
     cols_to_drop = [c for c in df.columns if df[c].nunique(dropna=True) <= 1]
     if cols_to_drop:
         df = df.drop(columns=cols_to_drop)
 
     return df
-
-
 def infer_column_types(df):
     """Infer datetime and numeric columns from object strings."""
     for col in df.columns:
@@ -120,10 +109,7 @@ def infer_column_types(df):
             if sample.str.match(r'^\d{1,3}(\.\d+)?$').all():
                 df[col] = pd.to_numeric(df[col], errors='coerce')
     return df
-
-# --------------------------------------------------
-# Block 3: missing value handling
-# --------------------------------------------------
+# Missing value handling
 
 def create_missing_indicators(df, threshold=0.05):
     """Create binary missingness flags for columns with missing values."""
@@ -132,15 +118,11 @@ def create_missing_indicators(df, threshold=0.05):
         if threshold <= missing_ratio < 1.0:
             df[f'{col}_missing_flag'] = df[col].isna().astype(int)
     return df
-
-
 def create_row_level_missing_features(df):
     """Generate row-level missing count and ratio features."""
     df['missing_count'] = df.isna().sum(axis=1)
     df['missing_ratio'] = df.isna().mean(axis=1).round(4)
     return df
-
-
 def impute_numeric_columns(df, numeric_threshold=0.8):
     """Impute numeric values while preserving high-missing columns as explicit indicators."""
     numeric_cols = df.select_dtypes(include=[np.number]).columns
@@ -153,8 +135,6 @@ def impute_numeric_columns(df, numeric_threshold=0.8):
             fill_value = median if np.isfinite(median) else 0
             df[col] = df[col].fillna(fill_value)
     return df
-
-
 def impute_categorical_columns(df, high_missing_threshold=0.5):
     """Impute categorical values using mode or explicit missing category."""
     categorical_cols = df.select_dtypes(include=['object', 'category']).columns
@@ -169,9 +149,7 @@ def impute_categorical_columns(df, high_missing_threshold=0.5):
                 df[col] = df[col].fillna(fill_value)
     return df
 
-# --------------------------------------------------
-# Block 4: separations for numeric, categorical, and datetime columns
-# --------------------------------------------------
+# Separations for numeric, categorical, and datetime columns
 
 def split_dataframe(df):
     """Separate numeric, categorical, and datetime columns."""
@@ -189,9 +167,7 @@ def select_numeric_columns_for_analysis(numeric_df, max_columns=40):
     selected = variances.head(max_columns).index.tolist()
     return numeric_df[selected]
 
-# --------------------------------------------------
-# Block 5: correlation and cointegration analysis
-# --------------------------------------------------
+# Correlation and cointegration analysis
 
 def compute_numeric_correlations(numeric_df, method='pearson', max_columns=40):
     """Compute a correlation matrix for numeric columns, limited for wide datasets."""
@@ -241,9 +217,7 @@ def compute_cointegration_matrix(numeric_df, significance_level=0.05, max_column
         matrix.iat[i, i] = 0.0
     return matrix
 
-# --------------------------------------------------
-# Block 6: descriptive statistics and feature extraction
-# --------------------------------------------------
+# Descriptive statistics and feature extraction
 
 def describe_numeric_columns(numeric_df):
     """Create a numeric feature summary with basic statistics using standard Python types."""
@@ -657,7 +631,7 @@ def generate_advanced_seaborn_charts(df, numeric_df, categorical_df, datetime_df
     # Step 8: Styling
     sns.set_theme(style="whitegrid")
     
-    # helper to save plot and track
+    # Helper to save plot and track
     def save_plot(title, filename_prefix):
         plt.tight_layout()
         plt.title(title, pad=20)
@@ -818,9 +792,7 @@ def build_insights(
 
     return insights
 
-# --------------------------------------------------
-# Block 7: optional visualizations for frontend or reports
-# --------------------------------------------------
+# Optional visualizations for frontend or reports
 
 def visualize_missingness(df, output_dir=None, max_columns=120, max_rows=5000):
     """Save a missingness heatmap if plotting is available."""
@@ -863,10 +835,7 @@ def visualize_correlation(df, output_dir=None, method='pearson', max_columns=40)
         return path
     plt.close()
     return None
-
-# --------------------------------------------------
-# Block 8: orchestration for extraction and feature engineering
-# --------------------------------------------------
+# Orchestration for extraction and feature engineering
 
 def process_excel_dataset(
     path,
@@ -954,7 +923,6 @@ def process_excel_dataset(
         seaborn_charts = generate_advanced_seaborn_charts(df, numeric_df, categorical_df, datetime_df, str(seaborn_charts_dir))
         # Update extra_files to include these
         for chart in seaborn_charts:
-            # chart['filename'] already contains 'seaborn_plots/' now
             extra_files[chart['title']] = str(Path(output_dir) / chart['filename'])
 
     return {
@@ -981,10 +949,7 @@ def process_excel_dataset(
         'seaborn_charts': seaborn_charts,
         'summary': summarize_dataframe(final_df),
     }
-
-# --------------------------------------------------
-# Block 9: CLI entrypoint
-# --------------------------------------------------
+# CLI entrypoint
 
 if __name__ == '__main__':
     import sys
