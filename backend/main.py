@@ -10,8 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 import uvicorn
 
-# Setup paths relative to this file (backend/main.py)
-# Root is one level up
 BACKEND_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BACKEND_DIR.parent
 UPLOAD_DIR = ROOT_DIR / 'uploads'
@@ -20,18 +18,14 @@ PROCESSED_DIR = ROOT_DIR / 'processed'
 UPLOAD_DIR.mkdir(exist_ok=True)
 PROCESSED_DIR.mkdir(exist_ok=True)
 
-# Path to extraction script
 EXTRACTION_SCRIPT = ROOT_DIR / 'feature engineering' / 'extraction.py'
 
 if not EXTRACTION_SCRIPT.exists():
-    # If not found at ROOT_DIR/feature engineering/extraction.py, check if we are in the wrong place
-    # Maybe backend is a sibling of feature engineering
     EXTRACTION_SCRIPT = BACKEND_DIR.parent / 'feature engineering' / 'extraction.py'
 
 if not EXTRACTION_SCRIPT.exists():
     raise FileNotFoundError(f"Extraction script not found: {EXTRACTION_SCRIPT}")
 
-# Import extraction module
 spec = importlib.util.spec_from_file_location('extraction_module', EXTRACTION_SCRIPT)
 extraction_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(extraction_module)
@@ -41,7 +35,6 @@ app = FastAPI(
     description="Backend API for the Feature Engineering Data Portal."
 )
 
-# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
@@ -54,7 +47,6 @@ def dataframe_to_json(df, max_rows=20):
     if df is None:
         return None
     trimmed = df.head(max_rows)
-    # Convert to JSON using pandas and then parse back to dict to be JSON-serializable
     return json.loads(trimmed.to_json(orient='index'))
 
 @app.get("/")
@@ -110,7 +102,7 @@ def clean_for_json(obj):
         return clean_for_json(obj.tolist())
     elif isinstance(obj, (pd.Series, pd.Index)):
         return clean_for_json(obj.to_dict())
-    elif hasattr(obj, 'dtype'): # Catch-all for other numpy-like scalars
+    elif hasattr(obj, 'dtype'): 
         try:
             val = obj.item()
             if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
@@ -124,8 +116,6 @@ def clean_for_json(obj):
 async def upload_file(file: UploadFile = File(...)):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing file name.")
-    
-    # Save the file
     safe_name = file.filename.replace(' ', '_')
     unique_id = uuid.uuid4().hex
     upload_path = UPLOAD_DIR / f"{unique_id}_{safe_name}"
@@ -147,11 +137,9 @@ async def upload_file(file: UploadFile = File(...)):
             output_dir=str(PROCESSED_DIR),
         )
     except Exception as exc:
-        # Log the error for debugging
         print(f"Error processing dataset: {exc}")
         raise HTTPException(status_code=500, detail=f"Backend processing failed: {str(exc)}")
 
-    # Construct response
     missing_report = result.get('missing_report')
     correlation_matrix = result.get('correlation_matrix')
     cointegration_matrix = result.get('cointegration_matrix')
@@ -178,7 +166,6 @@ async def upload_file(file: UploadFile = File(...)):
         'processed_csv': str(output_path.name),
     }
 
-    # Manual serialization to handle Numpy types and NaNs
     try:
         cleaned_data = clean_for_json(response_data)
         return JSONResponse(content=cleaned_data)
@@ -193,7 +180,6 @@ async def download_processed(filepath: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found.")
     
-    # Determine media type
     ext = file_path.suffix.lower()
     media_types = {
         '.png': 'image/png',
